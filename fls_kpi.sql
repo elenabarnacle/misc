@@ -1,4 +1,4 @@
-û--with players_seg as (
+--with players_seg as (
 --	select sg.*
 --	from agg.players_fls_gp as sg
 --	join (
@@ -24,17 +24,28 @@ order by period
 -- MAU total
 select count(distinct players.event_user) as mau
 from agg.players_fls_gp players
-where players.last_active/1000 between unix_timestamp('2023-05-01') and unix_timestamp('2023-05-31')
+where players.last_active/1000 between unix_timestamp('2023-05-01') and unix_timestamp('2023-06-01')
 
 
 -- MAU rolling (last 30 days)
+with dt as (
+	select distinct players.day as period
+	from agg.players_fls_gp players
+	where players.day between unix_timestamp('2023-05-01') and unix_timestamp('2023-05-31')
+	)
+select (timestamp 'epoch' + dt.period * interval '1 second')::date as period,
+	count(distinct players.event_user) as mau
+from agg.players_fls_gp players
+join dt on players.last_active/1000 >= dt.period-60*60*24*29 and players.last_active/1000 < dt.period+60*60*24
+group by (timestamp 'epoch' + dt.period * interval '1 second')::date
+order by period
 
-	
+
 -- ARPU total
 with active_users as (
 	select count(distinct players.event_user) as mau
 	from agg.players_fls_gp players
-	where players.last_active/1000 between unix_timestamp('2023-05-01') and unix_timestamp('2023-05-31')
+	where players.last_active/1000 between unix_timestamp('2023-05-01') and unix_timestamp('2023-06-31')
 	)
 	, revenue as (
 	select sum(payments.offer_price) as revenue
@@ -132,7 +143,7 @@ where events.day between unix_timestamp('2023-05-01') and unix_timestamp('2023-0
 	and events.currency = 'BoostIn'
 group by (timestamp 'epoch' + events.event_time/1000 * interval '1 second')::date
 order by period
-	
+
 
 -- boosts spent
 select (timestamp 'epoch' + events.event_time/1000 * interval '1 second')::date as period,
@@ -158,7 +169,7 @@ where events.day between unix_timestamp('2023-05-01') and unix_timestamp('2023-0
 	and lower(events.parameters) like '%currency_given%'
 group by from_unixtime(cast(events.event_time/1000 as bigint), 'yyyy-MM-dd')
 order by from_unixtime(cast(events.event_time/1000 as bigint), 'yyyy-MM-dd')
-	
+
 
 -- coins spent (Impala)
 select from_unixtime(cast(events.event_time/1000 as bigint), 'yyyy-MM-dd') as period,
@@ -169,4 +180,3 @@ where events.day between unix_timestamp('2023-05-01') and unix_timestamp('2023-0
 	and regexp_extract(events.parameters, '"currency":"([^/"]*?)"', 1) in ('Coins', 'RealCoins')
 group by from_unixtime(cast(events.event_time/1000 as bigint), 'yyyy-MM-dd')
 order by from_unixtime(cast(events.event_time/1000 as bigint), 'yyyy-MM-dd')
-
