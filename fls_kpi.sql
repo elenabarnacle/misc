@@ -48,7 +48,7 @@ with active_users as (
 	where players.last_active/1000 between unix_timestamp('2023-05-01') and unix_timestamp('2023-05-31')+(60*60*24)-1
 	)
 	, revenue as (
-	select sum(payments.offer_price)*0,66 as revenue
+	select sum(payments.offer_price)*0.66 as revenue
 	from agg.valid_iap_fls_gp payments
 	where payments.day between unix_timestamp('2023-05-01') and unix_timestamp('2023-05-31')
 	)
