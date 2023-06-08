@@ -17,14 +17,14 @@ select (timestamp 'epoch' + players.day * interval '1 second')::date as period,
 	count(players.event_user) as dau
 from agg.players_fls_gp players
 where players.day between unix_timestamp('2023-05-01') and unix_timestamp('2023-05-31')
-group by (timestamp 'epoch' + players.day * interval '1 second')::date
+group by period
 order by period
 
 
 -- MAU total
 select count(distinct players.event_user) as mau
 from agg.players_fls_gp players
-where players.last_active/1000 between unix_timestamp('2023-05-01') and unix_timestamp('2023-06-01')
+where players.last_active/1000 between unix_timestamp('2023-05-01') and unix_timestamp('2023-05-31')+(60*60*24)-1
 
 
 -- MAU rolling (last 30 days)
@@ -36,8 +36,8 @@ with dt as (
 select (timestamp 'epoch' + dt.period * interval '1 second')::date as period,
 	count(distinct players.event_user) as mau
 from agg.players_fls_gp players
-join dt on players.last_active/1000 >= dt.period-60*60*24*29 and players.last_active/1000 < dt.period+60*60*24
-group by (timestamp 'epoch' + dt.period * interval '1 second')::date
+join dt on players.last_active/1000 between (dt.period-(60*60*24*30)+(60*60*24)) and dt.period+(60*60*24)-1
+group by period
 order by period
 
 
@@ -45,10 +45,10 @@ order by period
 with active_users as (
 	select count(distinct players.event_user) as mau
 	from agg.players_fls_gp players
-	where players.last_active/1000 between unix_timestamp('2023-05-01') and unix_timestamp('2023-06-31')
+	where players.last_active/1000 between unix_timestamp('2023-05-01') and unix_timestamp('2023-05-31')+(60*60*24)-1
 	)
 	, revenue as (
-	select sum(payments.offer_price) as revenue
+	select sum(payments.offer_price)*0,66 as revenue
 	from agg.valid_iap_fls_gp payments
 	where payments.day between unix_timestamp('2023-05-01') and unix_timestamp('2023-05-31')
 	)
@@ -62,15 +62,14 @@ with dau as (
 		count(players.event_user) as dau
 	from agg.players_fls_gp players
 	where players.day between unix_timestamp('2023-05-01') and unix_timestamp('2023-05-31')
-	group by (timestamp 'epoch' + players.day * interval '1 second')::date
-	order by period
+	group by period
 	)
 	, revenue as (
 	select (timestamp 'epoch' + payments.day * interval '1 second')::date as period,
-		sum(payments.offer_price) as revenue
+		sum(payments.offer_price)*0.66 as revenue
 	from agg.valid_iap_fls_gp payments
 	where payments.day between unix_timestamp('2023-05-01') and unix_timestamp('2023-05-31')
-	group by (timestamp 'epoch' + payments.day * interval '1 second')::date
+	group by period
 	)
 select dau.period,
 	round(revenue.revenue / dau.dau, 2) as arpu
@@ -80,22 +79,21 @@ order by dau.period
 
 
 -- ARPPU total
-select round((sum(payments.offer_price) / count(distinct payments.event_user))::double precision, 2) as arppu
+select round((sum(payments.offer_price)*0.66 / count(distinct payments.event_user))::double precision, 2) as arppu
 from agg.valid_iap_fls_gp payments
 where payments.day between unix_timestamp('2023-05-01') and unix_timestamp('2023-05-31')
 
 
 -- ARPPU daily
 select (timestamp 'epoch' + payments.day * interval '1 second')::date as period,
-	round((sum(payments.offer_price) / count(distinct payments.event_user))::double precision, 2) as arppu
+	round((sum(payments.offer_price)*0.66 / count(distinct payments.event_user))::double precision, 2) as arppu
 from agg.valid_iap_fls_gp payments
 where payments.day between unix_timestamp('2023-05-01') and unix_timestamp('2023-05-31')
-group by (timestamp 'epoch' + payments.day * interval '1 second')::date
+group by period
 order by period
 
 
--- скорость игроков
--- количество пройденных уровней за единицу времени (день) на игрока
+-- average speed
 with levels_passed as (
 	select attempts.event_user,
 		(timestamp 'epoch' + attempts.event_time/1000 * interval '1 second')::date as period,
@@ -104,7 +102,7 @@ with levels_passed as (
 	where attempts.day between unix_timestamp('2023-05-01') and unix_timestamp('2023-05-31')
 		and attempts.name = 'Level.LevelComplete'
 	group by attempts.event_user,
-		(timestamp 'epoch' + attempts.event_time/1000 * interval '1 second')::date
+		period
 	)
 select levels_passed.period,
 	round(avg(levels_passed.levels_passed::double precision), 2) as avg_speed
@@ -113,7 +111,7 @@ group by levels_passed.period
 order by levels_passed.period
 
 
--- количество попыток за единицу времени (день) на игрока
+-- average number of attempts
 with attempts as (
 	select attempts.event_user,
 		(timestamp 'epoch' + attempts.event_time/1000 * interval '1 second')::date as period,
@@ -121,7 +119,7 @@ with attempts as (
 	from agg.attempts_fls_gp attempts
 	where attempts.day between unix_timestamp('2023-05-01') and unix_timestamp('2023-05-31')
 	group by attempts.event_user,
-		(timestamp 'epoch' + attempts.event_time/1000 * interval '1 second')::date
+		period
 	)
 select attempts.period,
 	round(avg(attempts.attempts::double precision),2) as attempts_avg
@@ -141,7 +139,7 @@ select (timestamp 'epoch' + events.event_time/1000 * interval '1 second')::date 
 from agg.currency_stream_fls_gp events
 where events.day between unix_timestamp('2023-05-01') and unix_timestamp('2023-05-31')
 	and events.currency = 'BoostIn'
-group by (timestamp 'epoch' + events.event_time/1000 * interval '1 second')::date
+group by period
 order by period
 
 
@@ -156,7 +154,7 @@ select (timestamp 'epoch' + events.event_time/1000 * interval '1 second')::date 
 from agg.currency_stream_fls_gp events
 where events.day between unix_timestamp('2023-05-01') and unix_timestamp('2023-05-31')
 	and events.currency = 'BoostOut'
-group by (timestamp 'epoch' + events.event_time/1000 * interval '1 second')::date
+group by period
 order by period
 
 
@@ -167,8 +165,8 @@ from main_day.all_events_fls_gp events
 where events.day between unix_timestamp('2023-05-01') and unix_timestamp('2023-05-31')
 	and events.event_type = 'purchase'
 	and lower(events.parameters) like '%currency_given%'
-group by from_unixtime(cast(events.event_time/1000 as bigint), 'yyyy-MM-dd')
-order by from_unixtime(cast(events.event_time/1000 as bigint), 'yyyy-MM-dd')
+group by period
+order by period
 
 
 -- coins spent (Impala)
@@ -178,5 +176,5 @@ from main_day.all_events_fls_gp events
 where events.day between unix_timestamp('2023-05-01') and unix_timestamp('2023-05-31')
 	and events.event_type = 'purchase'
 	and regexp_extract(events.parameters, '"currency":"([^/"]*?)"', 1) in ('Coins', 'RealCoins')
-group by from_unixtime(cast(events.event_time/1000 as bigint), 'yyyy-MM-dd')
-order by from_unixtime(cast(events.event_time/1000 as bigint), 'yyyy-MM-dd')
+group by period
+order by period
